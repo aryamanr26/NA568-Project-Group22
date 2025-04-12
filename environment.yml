@@ -1,0 +1,14 @@
+name: na568
+channels:
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+dependencies:
+  - conda-forge::gtsam==4.2.0
+  - python==3.9.18
+  - numpy==1.26.4
+  - matplotlib=3.8.3
+  - pillow=11.0.0
+  - requests
+  - opencv=4.11.0
+  - open3d
+prefix: /home/vtiaero/miniconda3/envs/na568
