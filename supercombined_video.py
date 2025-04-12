@@ -401,9 +401,6 @@ def plot_pose_trajectory(optimized_poses, groundtruth_poses, plane="XZ"):
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.show()
 
-import numpy as np
-import matplotlib.pyplot as plt
-
 def plot_pose_trajectory_single(optimized_poses,
                                 groundtruth_poses,
                                 plane="XZ"):
