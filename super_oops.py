@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import open3d as o3d
 import gtsam
 from gtsam import Pose3
+import plotly.graph_objects as go
 from transformers import AutoImageProcessor, SuperPointForKeypointDetection
 from SuperGluePretrainedNetwork.models.matching import Matching
 
@@ -215,6 +216,64 @@ class SuperVisualOdometry:
             last_R, last_t = R_abs, t_abs
         return abs_poses
     
+    def plot_3d_trajectory(self, optimized_poses, groundtruth_poses, output_html="trajectory.html"):
+        """
+        Create and save an interactive 3D plot of estimated vs. groundtruth poses.
+        
+        Args:
+            optimized_poses: list of (R, t) tuples, where t is a 3x1 or length-3 array.
+            groundtruth_poses: same format as optimized_poses.
+            output_html: filename for the output HTML (default: trajectory.html).
+
+        """
+        # Extract X, Y, Z coordinates
+        def extract_xyz(poses):
+            xs, ys, zs = [], [], []
+            for R, t in poses:
+                v = np.array(t).flatten()
+                xs.append(v[0])
+                ys.append(v[1])
+                zs.append(v[2])
+            return xs, ys, zs
+
+        x_est, y_est, z_est = extract_xyz(optimized_poses)
+        x_gt,  y_gt,  z_gt  = extract_xyz(groundtruth_poses)
+
+        fig = go.Figure()
+
+        # Estimated trajectory
+        fig.add_trace(go.Scatter3d(
+            x=x_est, y=y_est, z=z_est,
+            mode='lines+markers',
+            marker=dict(size=4),
+            line=dict(width=2),
+            name='Estimated'
+        ))
+
+        # Ground‑truth trajectory
+        fig.add_trace(go.Scatter3d(
+            x=x_gt, y=y_gt, z=z_gt,
+            mode='lines+markers',
+            marker=dict(size=4, symbol='cross'),
+            line=dict(width=2, dash='dash'),
+            name='Ground Truth'
+        ))
+
+        fig.update_layout(
+            title="3D Pose Trajectories",
+            scene=dict(
+                xaxis_title="X (m)",
+                yaxis_title="Y (m)",
+                zaxis_title="Z (m)",
+                aspectmode='data'  # ensures equal scale on all axes
+            ),
+            legend=dict(x=0.02, y=0.98)
+        )
+
+        # Write to HTML
+        fig.write_html(output_html)
+        print(f"Interactive plot saved to {output_html}")
+
     def plot_pose_trajectory_single(self, optimized_poses, groundtruth_poses, plane="XZ"):
         """
         Plot estimated and groundtruth 2D trajectories on a single plot.
@@ -294,8 +353,7 @@ class SuperVisualOdometry:
             # Estimate the relative pose.
             R, t, _ = self.estimate_pose(matched_kpts0, matched_kpts1)
             current_pose = (R, t)
-            print(t)
-            
+           
             # Decide on keyframe selection based on the translation difference.
             if self.select_keyframe(current_pose, last_keyframe_pose):
                 self.keyframes.append(current_pose)
@@ -320,6 +378,7 @@ class SuperVisualOdometry:
             # Plot the estimated trajectory against the groundtruth.
             self.plot_pose_trajectory_single(abs_poses, self.keyframe_gt, plane="XZ")
             self.plot_pose_trajectory_single(abs_poses, self.keyframe_gt, plane="XY")
+            self.plot_3d_trajectory(abs_poses, self.keyframe_gt, "trajectory.html")
         else:
             print("Not enough keyframes for trajectory estimation.")
 
@@ -339,4 +398,4 @@ if __name__ == '__main__':
     # Initialize and run the visual odometry system.
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
                                focal_length=707, translation_thresh=0.01)
-    vo_system.run(10)
+    vo_system.run(1000)

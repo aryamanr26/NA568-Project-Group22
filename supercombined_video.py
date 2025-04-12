@@ -505,7 +505,7 @@ if __name__ == '__main__':
 
     # Process remaining images
     keyframe_gt = [groundtruth_poses[0]]
-    for i, path in enumerate(image_files[1:300]):
+    for i, path in enumerate(image_files[1:]):
         curr_image = load_image(path)
         curr_feat = detect_and_extract(curr_image)
         
