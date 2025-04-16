@@ -228,7 +228,7 @@ class SuperVisualOdometry:
             last_R, last_t = R_abs, t_abs
         return abs_poses
     
-    def plot_pose_trajectory_single(self, optimized_poses, odometry_poses, groundtruth_poses, plane="XZ"):
+    def plot_pose_trajectory_single(self, optimized_poses, loopclosure_poses,odometry_poses, groundtruth_poses, plane="XZ"):
         """
         Plot estimated and groundtruth 2D trajectories on a single plot.
         
@@ -256,7 +256,8 @@ class SuperVisualOdometry:
             return xs, ys
 
         x_est, y_est = extract_coords(optimized_poses, plane)
-        x_ot, y_ot = extract_coords(odometry_poses, plane)
+        x_lc, y_lc = extract_coords(loopclosure_poses, plane)
+        x_odom, y_odom = extract_coords(odometry_poses, plane)
         x_gt, y_gt = extract_coords(groundtruth_poses, plane)
         
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -265,7 +266,8 @@ class SuperVisualOdometry:
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.plot(x_est, y_est, marker='o', linestyle='-', label='Estimated')
-        ax.plot(x_ot, y_ot, marker='*', linestyle='-', label='Odometry')
+        ax.plot(x_lc, y_lc, marker='d', linestyle='-', label='Loop Closure')
+        ax.plot(x_odom, y_odom, marker='*', linestyle='-', label='Odometry')
         ax.plot(x_gt, y_gt, marker='x', linestyle='--', label='Ground Truth')
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
@@ -574,8 +576,8 @@ class SuperVisualOdometry:
 
 
             # Plot the optimized trajectory against the groundtruth.
-            self.plot_pose_trajectory_single(aligned_poses, abs_poses, self.keyframe_gt, plane="XZ")
-            self.plot_pose_trajectory_single(aligned_poses, abs_poses, self.keyframe_gt, plane="XY")
+            self.plot_pose_trajectory_single(aligned_poses, abs_poses_optimized, abs_poses, self.keyframe_gt, plane="XZ")
+            self.plot_pose_trajectory_single(aligned_poses, abs_poses_optimized, abs_poses, self.keyframe_gt, plane="XY")
         else:
             print("Not enough keyframes for trajectory estimation.")
 
