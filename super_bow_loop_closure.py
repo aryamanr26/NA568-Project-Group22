@@ -3,6 +3,8 @@ import torch
 import cv2
 import numpy as np
 from PIL import Image
+import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import open3d as o3d
 import gtsam
@@ -69,6 +71,7 @@ class SuperVisualOdometry:
         self.keyframes = []       # Each keyframe is a tuple (R, t)
         self.relative_poses = []  # Relative pose estimates between keyframes
         self.keyframe_gt = []     # Groundtruth poses associated with keyframes
+        self.relative_poses_orb = []
 
         # ========== New: Initialize BoW vocabulary for loop closure ==========
         self.detector = cv2.SIFT_create()   # Keypoint detector
@@ -102,7 +105,11 @@ class SuperVisualOdometry:
     def load_image(self, path):
         """Load an image from file and convert it to RGB."""
         return Image.open(path).convert("RGB")
-    
+
+    def load_image_orb(self, path):
+        """Load an image from file and convert it to RGB."""
+        return cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+
     def detect_and_extract(self, image):
         """
         Use the SuperPoint model to detect keypoints and extract descriptors.
@@ -266,7 +273,7 @@ class SuperVisualOdometry:
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.plot(x_est, y_est, marker='o', linestyle='-', label='Estimated')
-        ax.plot(x_lc, y_lc, marker='d', linestyle='-', label='Loop Closure')
+        ax.plot(x_lc, y_lc, marker='d', linestyle='-', label='ORB')
         ax.plot(x_odom, y_odom, marker='*', linestyle='-', label='Odometry')
         ax.plot(x_gt, y_gt, marker='x', linestyle='--', label='Ground Truth')
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
@@ -488,6 +495,31 @@ class SuperVisualOdometry:
 
         # Vocabulary is ready — compute BoW descriptor
         return self.bow_extractor.compute(gray, keypoints)
+    
+    def detect_and_extract_orb(self, image):
+        orb = cv2.ORB_create(5000)  # You can adjust the number of features
+        keypoints, descriptors = orb.detectAndCompute(image, None)
+        return (keypoints, descriptors)
+
+    def match_features_orb(self, curr_feat, prev_feat, image_shape):
+        kp1, des1 = curr_feat
+        kp0, des0 = prev_feat
+
+        if des0 is None or des1 is None:
+            return [], []
+
+        # Brute-force matcher with Hamming distance
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(des0, des1)
+
+        # Sort by distance (optional)
+        matches = sorted(matches, key=lambda x: x.distance)
+
+        # Extract matched keypoints
+        matched_kpts0 = np.float32([kp0[m.queryIdx].pt for m in matches])
+        matched_kpts1 = np.float32([kp1[m.trainIdx].pt for m in matches])
+
+        return matched_kpts0, matched_kpts1
 
     def run(self, length):
         """
@@ -502,6 +534,8 @@ class SuperVisualOdometry:
         # Initialize with the first frame.
         first_image = self.load_image(self.image_files[0])
         first_feat = self.detect_and_extract(first_image)
+        first_image_orb = self.load_image_orb(self.image_files[0])
+        first_feat_orb  = self.detect_and_extract_orb(first_image_orb)
         image_shape = (first_image.height, first_image.width)
         
         # Set the first keyframe with an identity pose.
@@ -510,21 +544,27 @@ class SuperVisualOdometry:
         self.keyframe_gt.append(self.groundtruth_poses[0])
         last_keyframe_pose = init_pose
         prev_feat = first_feat
+        prev_feat_orb = first_feat_orb
         
         # Process subsequent images.
         for i, path in enumerate(self.image_files[1: length], start=1):
             curr_image = self.load_image(path)
             curr_feat = self.detect_and_extract(curr_image)
+            curr_image_orb = self.load_image_orb(path)
+            curr_feat_orb = self.detect_and_extract_orb(curr_image_orb)
             
             # Match features between the current frame and the last keyframe.
             matched_kpts0, matched_kpts1 = self.match_features(curr_feat, prev_feat, image_shape)
+            matched_kpts0_orb, matched_kpts1_orb = self.match_features_orb(prev_feat_orb, curr_feat_orb, image_shape)
             if len(matched_kpts0) < 8:
                 print(f"Not enough matches for image {path}, skipping.")
                 continue
             
             # Estimate the relative pose.
             R, t, _ = self.estimate_pose(matched_kpts0, matched_kpts1)
+            R_orb, t_orb, _orb = self.estimate_pose(matched_kpts0_orb, matched_kpts1_orb)
             current_pose = (R, t)
+            current_pose_orb = (R_orb, t_orb)
             # print(t)
             
             # Decide on keyframe selection based on the translation difference.
@@ -532,6 +572,7 @@ class SuperVisualOdometry:
                 self.keyframes.append(current_pose)
                 self.keyframe_gt.append(self.groundtruth_poses[i])
                 self.relative_poses.append(current_pose)
+                self.relative_poses_orb.append(current_pose_orb)
                 last_keyframe_pose = current_pose
                 print(f"Keyframe added: {path} (Total keyframes: {len(self.keyframes)})")
             
@@ -541,6 +582,7 @@ class SuperVisualOdometry:
             
             # Update the previous features (alternatively, you can always match to the last keyframe).
             prev_feat = curr_feat
+            prev_feat_orb = curr_feat_orb
         
         # === Step 3: Build Vocabulary (After all keyframes collected) ===
         print("Building BoW Vocabulary...")
@@ -553,6 +595,7 @@ class SuperVisualOdometry:
             R_org = self.keyframes[0][0]
             t_org = self.keyframes[0][1]
             abs_poses = self.accumulate_relative_poses(self.relative_poses, R_org, t_org)
+            abs_poses_orb = self.accumulate_relative_poses(self.relative_poses_orb, R_org, t_org)
             
             print("Accumulated Poses:")
             # for idx, pose in enumerate(abs_poses):
@@ -576,8 +619,8 @@ class SuperVisualOdometry:
 
 
             # Plot the optimized trajectory against the groundtruth.
-            self.plot_pose_trajectory_single(aligned_poses, abs_poses_optimized, abs_poses, self.keyframe_gt, plane="XZ")
-            self.plot_pose_trajectory_single(aligned_poses, abs_poses_optimized, abs_poses, self.keyframe_gt, plane="XY")
+            self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XZ")
+            self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XY")
         else:
             print("Not enough keyframes for trajectory estimation.")
 
@@ -624,8 +667,8 @@ if __name__ == '__main__':
                   [ 0,  0,  1]])
     
     # Paths to groundtruth file and image folder.
-    groundtruth_file = "data_odometry_poses/dataset/poses/00.txt"
-    image_folder = "image_0"
+    groundtruth_file = "poses/00.txt"
+    image_folder = "KITTI_dataset/dataset/sequences/00/image_0"
     
     image_files = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder)
                           if f.endswith(('.png', '.jpg', '.jpeg'))])
@@ -636,5 +679,6 @@ if __name__ == '__main__':
     # Initialize and run the visual odometry system.
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
                                focal_length=707, translation_thresh=0.01)
-    n = 1000 # len(image_files)
+    n = len(image_files) # len(image_files)
+    n = 1000
     vo_system.run(n)
