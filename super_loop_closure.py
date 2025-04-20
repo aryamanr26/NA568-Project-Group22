@@ -6,7 +6,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import open3d as o3d
 import gtsam
-from gtsam import Pose3
+from gtsam import Pose3, Rot3, Point3
 from transformers import AutoImageProcessor, SuperPointForKeypointDetection
 from SuperGluePretrainedNetwork.models.matching import Matching
 
@@ -16,7 +16,7 @@ os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 class SuperVisualOdometry:
 
-    def __init__(self, image_folder, groundtruth_file, K, focal_length=707, translation_thresh=0.01):
+    def __init__(self, image_folder, groundtruth_file, K, focal_length=707, translation_thresh=0.01, window_size = 10):
         """
         Initialize the visual odometry system.
         
@@ -32,6 +32,8 @@ class SuperVisualOdometry:
         self.K = K
         self.focal_length = focal_length
         self.translation_thresh = translation_thresh
+        self.window_size = window_size
+        self.estimated_pose_text = []
         
         # Device selection
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -47,7 +49,7 @@ class SuperVisualOdometry:
             'superpoint': {},
             'superglue': {
                 'weights': 'outdoor',
-                'sinkhorn_iterations': 20,
+                'sinkhorn_iterations': 100,
                 'match_threshold': 0.2,
             }
         }
@@ -216,7 +218,36 @@ class SuperVisualOdometry:
             last_R, last_t = R_abs, t_abs
         return abs_poses
     
-    def plot_pose_trajectory_single(self, optimized_poses, groundtruth_poses, plane="XZ"):
+    def accumulate_relative_poses_gtsam(self, rel_poses, init_R, init_t):
+        """
+        Chain a list of relative poses into absolute poses using GTSAM Pose3.
+
+        Args:
+            rel_poses (list): List of tuples (R, t) for each relative movement.
+            init_R (np.ndarray): Initial rotation (3×3).
+            init_t (np.ndarray): Initial translation (3×1).
+        Returns:
+            abs_poses (list): List of accumulated (absolute) poses as (R, t).
+        """
+        # Initialize the running absolute Pose3
+        pose_abs = Pose3(Rot3(init_R.copy()), Point3(*init_t.copy().flatten()))
+
+        abs_poses = []
+        for R_rel, t_rel in rel_poses:
+            # Build a Pose3 from the relative (R, t)
+            rel_pose = Pose3(Rot3(R_rel), Point3(*t_rel.flatten()))
+            # Compose to get the new absolute pose
+            pose_abs = pose_abs.compose(rel_pose)
+
+            # Extract back to numpy
+            R_abs = pose_abs.rotation().matrix()
+            t_abs = pose_abs.translation().reshape(3, 1)
+
+            abs_poses.append((R_abs, t_abs))
+
+        return abs_poses
+    
+    def plot_pose_trajectory_single(self, optimized_poses, odometry_poses, groundtruth_poses, plane="XZ"):
         """
         Plot estimated and groundtruth 2D trajectories on a single plot.
         
@@ -244,6 +275,7 @@ class SuperVisualOdometry:
             return xs, ys
 
         x_est, y_est = extract_coords(optimized_poses, plane)
+        x_ot, y_ot = extract_coords(odometry_poses, plane)
         x_gt, y_gt = extract_coords(groundtruth_poses, plane)
         
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -251,8 +283,9 @@ class SuperVisualOdometry:
         xlabel, ylabel = axis_labels.get(plane.upper(), ("X", "Z"))
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        ax.plot(x_est, y_est, marker='o', linestyle='-', label='Estimated')
-        ax.plot(x_gt, y_gt, marker='x', linestyle='--', label='Ground Truth')
+        #ax.plot(x_est, y_est, marker='o', linestyle='-', label='Estimated')
+        ax.plot(x_ot, y_ot, linestyle = '-', color = 'b', label = "Odometry")
+        ax.plot(x_gt, y_gt, linestyle='--', color = 'o', label='Ground Truth')
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
         ax.axis('equal')
@@ -260,94 +293,147 @@ class SuperVisualOdometry:
         plt.tight_layout()
         plt.show()
     
+    def optimize_local_window(self):
+        """
+        Sliding-window BA on the last self.window_size keyframes.
+        Updates self.keyframes in place.
+        """
+        n = len(self.keyframes)
+        start = max(0, n - self.window_size)
+        idxs = list(range(start, n))
+        graph = gtsam.NonlinearFactorGraph()
+        initial = gtsam.Values()
+        sig_prior = gtsam.noiseModel.Diagonal.Sigmas(np.ones(6)*1e-6)
+        sig_odom  = gtsam.noiseModel.Diagonal.Sigmas(np.full(6,0.05))
+
+        # prior on first in window
+        i0 = idxs[0]
+        R0, t0 = self.keyframes[i0]
+        p0 = Pose3(gtsam.Rot3(R0), t0.flatten())
+        graph.add(gtsam.PriorFactorPose3(i0, p0, sig_prior))
+        initial.insert(i0, p0)
+        # insert rest
+        for i in idxs[1:]:
+            R,t = self.keyframes[i]
+            initial.insert(i, Pose3(gtsam.Rot3(R), t.flatten()))
+
+        # odom factors
+        for k in range(start, n-1):
+            Rr, tr = self.relative_poses[k]
+            rel = Pose3(gtsam.Rot3(Rr), tr.flatten())
+            graph.add(gtsam.BetweenFactorPose3(k, k+1, rel, sig_odom))
+
+        opt = gtsam.LevenbergMarquardtOptimizer(graph, initial).optimize()
+        for i in idxs:
+            p = opt.atPose3(i)
+            self.keyframes[i] = (p.rotation().matrix(), p.translation().reshape(3,1))
+    
+    def save_pose_kitti_format(self, R, t, pose_list):
+       
+        # Ensure t is a 1D array with 3 elements
+        t = np.array(t).flatten()
+        if R.shape != (3, 3):
+            raise ValueError("Rotation matrix R must have shape (3,3)")
+        if t.shape != (3,):
+            raise ValueError("Translation vector t must have 3 elements")
+        
+        # Create the 3x4 transformation matrix [R|t]
+        T = np.hstack((R, t.reshape(3, 1)))
+        
+        # Flatten the matrix row-wise (resulting in 12 values)
+        T_flat = T.flatten()
+        
+        # Format the values as scientific notation with 6 decimal places
+        formatted_values = " ".join("{:.6e}".format(val) for val in T_flat)
+
+        pose_list.append(formatted_values)
+
+        return pose_list
+    
+    def write_strings_to_file(self, lines, filename):
+        # Open the file in write mode. This will create the file if it doesn't exist.
+        with open(filename, 'w') as file:
+            for line in lines:
+                # Write each string followed by a newline character.
+                file.write(line + "\n")
+
     def perform_loop_closure(self, abs_poses):
         """
-        Performs simple loop closure detection and graph optimization using GTSAM.
+        Performs loop closure detection and graph optimization using GTSAM.
         
+        This function constructs a factor graph from a list of absolute poses, adds odometry constraints 
+        between consecutive poses, and includes loop closure factors when poses that are far apart in time 
+        are close in space. After constructing the graph, it optimizes the poses using Levenberg-Marquardt.
+
         Args:
-            abs_poses (list): List of absolute poses [(R, t), ...]
-        
+            abs_poses (list of tuple): Each element is a tuple (R, t) where:
+                R (np.ndarray): Rotation matrix (3x3).
+                t (np.ndarray): Translation vector (3, 1) or (3,).
+
         Returns:
-            optimized_poses: List of optimized absolute poses after loop closure correction.
+            list of tuple: Optimized absolute poses as (R, t), where R is the rotation matrix 
+                        and t is the translation vector in 1D numpy array form.
         """
-        # print(1)
+        # Initialize factor graph and initial estimates container.
         graph = gtsam.NonlinearFactorGraph()
-        # print(2)
         initial_estimates = gtsam.Values()
-        # print(3)
+        
+        # Define noise models for different factors.
         noise_prior = gtsam.noiseModel.Diagonal.Variances(np.ones(6) * 1e-6)
-        noise_odometry = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.05]*6))
-        noise_loop = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.03]*6))
-        # print(4)
-
-        # Add prior on the first pose
-        # print(abs_poses[0])
+        noise_odometry = gtsam.noiseModel.Diagonal.Sigmas(np.full(6, 0.05))
+        noise_loop = gtsam.noiseModel.Diagonal.Sigmas(np.full(6, 0.03))
+        
+        # Process the first pose and add a prior factor.
         R0, t0 = abs_poses[0]
-        # print(R0.shape)
-        # print(t0.shape)
-
-        # Sanity check on R0
-        should_be_identity = R0.T @ R0
-        det = np.linalg.det(R0)
-        # print("R0ᵀ * R0 =\n", should_be_identity)
-        # print("det(R0) =", det)
-
-        # if not np.allclose(should_be_identity, np.eye(3), atol=1e-3):
-        #     raise ValueError("❌ R0 is not orthogonal!")
-
-        # if not np.isclose(det, 1.0, atol=1e-3):
-        #     raise ValueError("❌ det(R0) ≠ 1. Invalid rotation matrix!")
-
-        if t0.shape == (3, 1): t0 = t0.flatten()
+        # Flatten t0 if it is a column vector.
+        t0 = t0.flatten() if t0.shape == (3, 1) else t0
         R0 = np.ascontiguousarray(R0, dtype=np.float64)
         t0 = np.ascontiguousarray(t0, dtype=np.float64)
         first_pose = gtsam.Pose3(gtsam.Rot3(R0), t0)
-        # print(5)
-        # print(first_pose)
         graph.add(gtsam.PriorFactorPose3(0, first_pose, noise_prior))
-        # print(6)
         initial_estimates.insert(0, first_pose)
-        # print(7)
-
-        # Add odometry constraints
+        
+        # Add odometry factors between consecutive poses.
         for i in range(1, len(abs_poses)):
             R, t = abs_poses[i]
-            if t.shape == (3, 1): t = t.flatten()
-            pose_i = gtsam.Pose3(gtsam.Rot3(R), t)
-            initial_estimates.insert(i, pose_i)
-
-            R_prev, t_prev = abs_poses[i-1]
+            t = t.flatten() if t.shape == (3, 1) else t
+            current_pose = gtsam.Pose3(gtsam.Rot3(R), t)
+            initial_estimates.insert(i, current_pose)
+            
+            # Compute relative transformation from the previous pose.
+            R_prev, t_prev = abs_poses[i - 1]
             R_curr, t_curr = abs_poses[i]
             rel_R = R_prev.T @ R_curr
             rel_t = R_prev.T @ (t_curr - t_prev)
             rel_pose = gtsam.Pose3(gtsam.Rot3(rel_R), rel_t)
-            graph.add(gtsam.BetweenFactorPose3(i-1, i, rel_pose, noise_odometry))
-
-        # Hyper parameter for loop closure distance
-        length_parameter = 1000 
+            graph.add(gtsam.BetweenFactorPose3(i - 1, i, rel_pose, noise_odometry))
         
-        # Naive loop closure: connect current frame to earlier if it's close in space
+        # Set hyper-parameter: minimum index difference to consider for loop closure.
+        length_parameter = 500
+        distance_variable = 200
+        
+        # Naive loop closure: connect poses that are spatially close yet far in sequence.
         for i in range(len(abs_poses)):
-            for j in range(i+length_parameter, len(abs_poses), length_parameter):  # Skip nearby frames
+            for j in range(i + length_parameter, len(abs_poses), length_parameter):
                 t_i = abs_poses[i][1]
                 t_j = abs_poses[j][1]
-                dist = np.linalg.norm(t_i - t_j)
-                if dist < 5:  # Arbitrary threshold for loop detection
+                if np.linalg.norm(t_i - t_j) < distance_variable:  # Threshold set to 5 meters.
                     R_rel = abs_poses[i][0].T @ abs_poses[j][0]
                     t_rel = abs_poses[i][0].T @ (t_j - t_i)
                     loop_pose = gtsam.Pose3(gtsam.Rot3(R_rel), t_rel)
                     graph.add(gtsam.BetweenFactorPose3(i, j, loop_pose, noise_loop))
-
-        # Optimize
+        
+        # Optimize the factor graph.
         optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimates)
         result = optimizer.optimize()
-
-        # Extract optimized poses
+        
+        # Extract and return the optimized poses.
         optimized_poses = []
         for i in range(len(abs_poses)):
             pose_i = result.atPose3(i)
             R_i = pose_i.rotation().matrix()
             t_i = pose_i.translation()
+            # Ensure translation is returned as a 1D numpy array.
             optimized_poses.append((R_i, np.array([t_i[0], t_i[1], t_i[2]])))
         
         return optimized_poses
@@ -355,89 +441,85 @@ class SuperVisualOdometry:
     def run(self, length):
         """
         Execute the full pipeline:
-         - Loads the first image and sets it as the initial keyframe.
-         - Iterates over remaining images, matching features and estimating relative poses.
-         - Selects keyframes based on the translation difference.
-         - Accumulates relative poses into an overall trajectory.
-         - Performs loop closure and graph optimization.
-         - Plots the optimized trajectory against groundtruth.
+        - Loads the first image and sets it as the initial keyframe.
+        - Iterates over remaining images, matching features and estimating relative poses.
+        - Selects keyframes based on the translation difference.
+        - Accumulates relative poses into an overall trajectory.
+        - Performs loop closure and graph optimization.
+        - Plots the optimized trajectory against groundtruth.
         """
-        # Initialize with the first frame.
         first_image = self.load_image(self.image_files[0])
         first_feat = self.detect_and_extract(first_image)
         image_shape = (first_image.height, first_image.width)
         
-        # Set the first keyframe with an identity pose.
         init_pose = (np.eye(3), np.zeros((3, 1)))
+        R0, T0 = init_pose[0], init_pose[1]
+        self.estimated_pose_text = self.save_pose_kitti_format(np.eye(3), np.zeros((3,1)), self.estimated_pose_text)
+        self.absolute_pose = [init_pose]
         self.keyframes.append(init_pose)
         self.keyframe_gt.append(self.groundtruth_poses[0])
         last_keyframe_pose = init_pose
         prev_feat = first_feat
         
-        # Process subsequent images.
-        for i, path in enumerate(self.image_files[1: length], start=1):
+        for i, path in enumerate(self.image_files[1:length], start=1):
             curr_image = self.load_image(path)
             curr_feat = self.detect_and_extract(curr_image)
             
-            # Match features between the current frame and the last keyframe.
+            # keep = curr_feat["scores"] > 0.5
+            # curr_feat["keypoints"] = curr_feat["keypoints"][keep]
+            # curr_feat["descriptors"] = curr_feat["descriptors"][keep]
+            # curr_feat["scores"] = curr_feat["scores"][keep]
+
+            # keep = prev_feat["scores"] > 0.5
+            # prev_feat["keypoints"] = prev_feat["keypoints"][keep]
+            # prev_feat["descriptors"] = prev_feat["descriptors"][keep]
+            # prev_feat["scores"] = prev_feat["scores"][keep]
+
             matched_kpts0, matched_kpts1 = self.match_features(curr_feat, prev_feat, image_shape)
             if len(matched_kpts0) < 8:
                 print(f"Not enough matches for image {path}, skipping.")
+                # self.estimated_pose_text = self.save_pose_kitti_format(R, t, self.estimated_pose_text)
                 continue
             
-            # Estimate the relative pose.
             R, t, _ = self.estimate_pose(matched_kpts0, matched_kpts1)
             current_pose = (R, t)
-            # print(t)
+            # self.absolute_pose.append((self.absolute_pose[-1][0].dot(R), self.absolute_pose[-1][0].dot(t) + self.absolute_pose[-1][1]))
+            # self.estimated_pose_text = self.save_pose_kitti_format(R, t, self.estimated_pose_text)
+            # current_pose = self.absolute_pose[-1]
             
-            # Decide on keyframe selection based on the translation difference.
+
             if self.select_keyframe(current_pose, last_keyframe_pose):
                 self.keyframes.append(current_pose)
                 self.keyframe_gt.append(self.groundtruth_poses[i])
                 self.relative_poses.append(current_pose)
                 last_keyframe_pose = current_pose
+
+                if len(self.keyframes) > 1:
+                    self.optimize_local_window()
+
                 print(f"Keyframe added: {path} (Total keyframes: {len(self.keyframes)})")
             
-            # Update the previous features (alternatively, you can always match to the last keyframe).
             prev_feat = curr_feat
         
-        # If more than one keyframe was selected, accumulate and optimize the trajectory.
         if len(self.keyframes) > 1:
             R_org = self.keyframes[0][0]
             t_org = self.keyframes[0][1]
-            abs_poses = self.accumulate_relative_poses(self.relative_poses, R_org, t_org)
-            
-            print("Accumulated Poses:")
-            # for idx, pose in enumerate(abs_poses):
-            #     print(f"Pose {idx}:\nRotation:\n{pose[0]}\nTranslation: {pose[1]}\n")
-            
-            # LOOP CLOSURE: refine poses with GTSAM optimization
-
+            abs_poses = self.accumulate_relative_poses_gtsam(self.relative_poses, R_org, t_org)
+            # abs_poses = self.absolute_pose
             abs_poses_optimized = self.perform_loop_closure(abs_poses)
-            # print("I'm here")
-
-            # print("\n🔍 Number of Keyframes:", len(self.keyframes))
-            # print("🔍 Number of Groundtruth Poses:", len(self.keyframe_gt))
-            # print("🔍 Number of Optimized Poses:", len(abs_poses_optimized))
-            # print("🔍 Number of Predicted Poses:", len(abs_poses))
-
-            # print("\n--- Sample Groundtruth Pose [0] ---")
-            # print("R:\n", self.keyframe_gt[0][0])
-            # print("t:\n", self.keyframe_gt[0][1])
-
-            # print("\n--- Sample Predicted Pose Before Loop Closure [0] ---")
-            # print("R:\n", abs_poses[0][0])
-            # print("t:\n", abs_poses[0][1])
-
-            # print("\n--- Sample Optimized Pose After Loop Closure [0] ---")
-            # print("R:\n", abs_poses_optimized[0][0])
-            # print("t:\n", abs_poses_optimized[0][1])
-
-            # Plot the optimized trajectory against the groundtruth.
-            self.plot_pose_trajectory_single(abs_poses_optimized, self.keyframe_gt, plane="XZ")
-            self.plot_pose_trajectory_single(abs_poses_optimized, self.keyframe_gt, plane="XY")
+            
+            self.plot_pose_trajectory_single(abs_poses_optimized, abs_poses, self.keyframe_gt, plane="XZ")
+            self.plot_pose_trajectory_single(abs_poses_optimized, abs_poses, self.keyframe_gt, plane="XY")
         else:
             print("Not enough keyframes for trajectory estimation.")
+
+        for i, pose in enumerate(abs_poses):
+            R, t = pose
+            self.estimated_pose_text = self.save_pose_kitti_format(R, t, self.estimated_pose_text)
+        # Saving estimated trajectory
+        output_path = "/home/vtiaero/files/output/estimated_traj.txt"
+        # self.write_strings_to_file(self.estimated_pose_text, output_path)
+        # print(len(self.estimated_pose_text))
 
 
 
@@ -461,5 +543,6 @@ if __name__ == '__main__':
 
     # Initialize and run the visual odometry system.
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
-                               focal_length=707, translation_thresh=0.01)
-    vo_system.run(len(image_files))
+                               focal_length=707, translation_thresh=0.01, window_size=20)
+    iterations =  1000 #len(image_files)
+    vo_system.run(iterations)

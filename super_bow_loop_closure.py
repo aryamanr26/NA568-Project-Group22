@@ -271,11 +271,19 @@ class SuperVisualOdometry:
         xlabel, ylabel = axis_labels.get(plane.upper(), ("X", "Z"))
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
+<<<<<<< Updated upstream
         # ax.plot(x_est, y_est, linestyle='-', color='blue', label='Superglue + scale-correction')
         # ax.plot(x_est_ref, y_est_ref, linestyle='-', color='tab:brown', label='Orb + scale-correction')
         ax.plot(x_lc, y_lc, linestyle='-', color='green', label='ORB')
         ax.plot(x_odom, y_odom, linestyle='-', color='orange', label='Superglue')
         ax.plot(x_gt, y_gt, marker='*', linestyle='-', color='black', label='Ground Truth')
+=======
+        # ax.plot(x_est, y_est, marker='o', color = "tab:blue", linestyle='-', label='SuperVO (scale-correction)')
+        ax.plot(x_est, y_est, marker='o', color = "tab:blue", linestyle='-', label='Loop Closure')
+        ax.plot(x_lc, y_lc, marker='*', color = "tab:orange", linestyle='--', label='ORB')
+        ax.plot(x_odom, y_odom, marker='.', color = "tab:blue", linestyle='-', label='SuperVO Odometry')
+        ax.plot(x_gt, y_gt, marker='_', color = "tab:green", linestyle='-', label='Ground Truth')
+>>>>>>> Stashed changes
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
         ax.axis('equal')
@@ -283,97 +291,6 @@ class SuperVisualOdometry:
         plt.tight_layout()
         plt.show()
     
-    # def perform_loop_closure(self, abs_poses):
-    #     """
-    #     Performs simple loop closure detection and graph optimization using GTSAM.
-        
-    #     Args:
-    #         abs_poses (list): List of absolute poses [(R, t), ...]
-        
-    #     Returns:
-    #         optimized_poses: List of optimized absolute poses after loop closure correction.
-    #     """
-    #     # print(1)
-    #     graph = gtsam.NonlinearFactorGraph()
-    #     # print(2)
-    #     initial_estimates = gtsam.Values()
-    #     # print(3)
-    #     noise_prior = gtsam.noiseModel.Diagonal.Variances(np.ones(6) * 1e-6)
-    #     noise_odometry = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.05]*6))
-    #     noise_loop = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.03]*6))
-    #     # print(4)
-
-    #     # Add prior on the first pose
-    #     # print(abs_poses[0])
-    #     R0, t0 = abs_poses[0]
-    #     # print(R0.shape)
-    #     # print(t0.shape)
-
-    #     # Sanity check on R0
-    #     should_be_identity = R0.T @ R0
-    #     det = np.linalg.det(R0)
-    #     # print("R0ᵀ * R0 =\n", should_be_identity)
-    #     # print("det(R0) =", det)
-
-    #     # if not np.allclose(should_be_identity, np.eye(3), atol=1e-3):
-    #     #     raise ValueError("❌ R0 is not orthogonal!")
-
-    #     # if not np.isclose(det, 1.0, atol=1e-3):
-    #     #     raise ValueError("❌ det(R0) ≠ 1. Invalid rotation matrix!")
-
-    #     if t0.shape == (3, 1): t0 = t0.flatten()
-    #     R0 = np.ascontiguousarray(R0, dtype=np.float64)
-    #     t0 = np.ascontiguousarray(t0, dtype=np.float64)
-    #     first_pose = gtsam.Pose3(gtsam.Rot3(R0), t0)
-    #     # print(5)
-    #     # print(first_pose)
-    #     graph.add(gtsam.PriorFactorPose3(0, first_pose, noise_prior))
-    #     # print(6)
-    #     initial_estimates.insert(0, first_pose)
-    #     # print(7)
-
-    #     # Add odometry constraints
-    #     for i in range(1, len(abs_poses)):
-    #         R, t = abs_poses[i]
-    #         if t.shape == (3, 1): t = t.flatten()
-    #         pose_i = gtsam.Pose3(gtsam.Rot3(R), t)
-    #         initial_estimates.insert(i, pose_i)
-
-    #         R_prev, t_prev = abs_poses[i-1]
-    #         R_curr, t_curr = abs_poses[i]
-    #         rel_R = R_prev.T @ R_curr
-    #         rel_t = R_prev.T @ (t_curr - t_prev)
-    #         rel_pose = gtsam.Pose3(gtsam.Rot3(rel_R), rel_t)
-    #         graph.add(gtsam.BetweenFactorPose3(i-1, i, rel_pose, noise_odometry))
-
-    #     # Hyper parameter for loop closure distance
-    #     length_parameter = 1000 
-        
-    #     # Naive loop closure: connect current frame to earlier if it's close in space
-    #     for i in range(len(abs_poses)):
-    #         for j in range(i+length_parameter, len(abs_poses), length_parameter):  # Skip nearby frames
-    #             t_i = abs_poses[i][1]
-    #             t_j = abs_poses[j][1]
-    #             dist = np.linalg.norm(t_i - t_j)
-    #             if dist < 5:  # Arbitrary threshold for loop detection
-    #                 R_rel = abs_poses[i][0].T @ abs_poses[j][0]
-    #                 t_rel = abs_poses[i][0].T @ (t_j - t_i)
-    #                 loop_pose = gtsam.Pose3(gtsam.Rot3(R_rel), t_rel)
-    #                 graph.add(gtsam.BetweenFactorPose3(i, j, loop_pose, noise_loop))
-
-    #     # Optimize
-    #     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimates)
-    #     result = optimizer.optimize()
-
-    #     # Extract optimized poses
-    #     optimized_poses = []
-    #     for i in range(len(abs_poses)):
-    #         pose_i = result.atPose3(i)
-    #         R_i = pose_i.rotation().matrix()
-    #         t_i = pose_i.translation()
-    #         optimized_poses.append((R_i, np.array([t_i[0], t_i[1], t_i[2]])))
-        
-    #     return optimized_poses
 
     def perform_loop_closure(self, abs_poses):
         """
@@ -445,9 +362,27 @@ class SuperVisualOdometry:
                 loop_pose = gtsam.Pose3(gtsam.Rot3(R_rel), t_rel)
                 graph.add(gtsam.BetweenFactorPose3(best_j, i, loop_pose, noise_loop))
 
-        # === Graph optimization ===
+        i_start = 0
+        i_end   = len(abs_poses) - 1
+        R_s, t_s = abs_poses[i_start]
+        R_e, t_e = abs_poses[i_end]
+        t_s = t_s.flatten() if t_s.shape == (3,1) else t_s
+        t_e = t_e.flatten() if t_e.shape == (3,1) else t_e
+
+        rel_R_end = R_s.T @ R_e
+        rel_t_end = R_s.T @ (t_e - t_s)
+        loop_pose_end = gtsam.Pose3(
+            gtsam.Rot3(rel_R_end),
+            np.ascontiguousarray(rel_t_end, dtype=np.float64)
+        )
+
+        noise_end = gtsam.noiseModel.Diagonal.Sigmas(np.ones(6) * 0.01)
+        graph.add(gtsam.BetweenFactorPose3(i_end, i_start, loop_pose_end, noise_end))
+        print(f"🔒 Forced loop closure: {i_end} → {i_start}")
+
+        # ——— Optimize the factor graph ———
         optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimates)
-        result = optimizer.optimize()
+        result    = optimizer.optimize()
 
         # === Extract optimized poses ===
         optimized_poses = []
@@ -630,6 +565,40 @@ class SuperVisualOdometry:
             # Plot the optimized trajectory against the groundtruth.
             self.plot_pose_trajectory_single(abs_poses_orb, abs_poses, self.keyframe_gt, plane="XZ")
             self.plot_pose_trajectory_single(abs_poses_orb, abs_poses, self.keyframe_gt, plane="XY")
+            # self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XZ")
+            # self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XY")
+
+            ## SAVING THE DATA IN .npz FILE
+            version = 0
+            filename = "final_numpy/seq_{}_plot".format(version) + ".npz"
+
+            # Suppose abs_poses is a list of (R, t) with R shape (3,3), t shape (3,) or (3,1)
+            Rs_abs  = np.stack([R for R,t in abs_poses])         # shape (N, 3, 3)
+            ts_abs  = np.stack([t.flatten() for R,t in abs_poses])  # shape (N, 3)
+
+            # Do the same for abs_poses_orb, abs_poses_optimized, etc.
+            Rs_orb = np.stack([R for R,t in abs_poses_orb])
+            ts_orb = np.stack([t.flatten() for R,t in abs_poses_orb])
+
+            # Do the same for abs_poses_orb, abs_poses_optimized, etc.
+            Rs_lp = np.stack([R for R,t in abs_poses_optimized])
+            ts_lp = np.stack([t.flatten() for R,t in abs_poses_optimized])
+
+            Rs_gt = np.stack([R for R,t in self.keyframe_gt])
+            ts_gt = np.stack([t.flatten() for R,t in self.keyframe_gt])
+
+            np.savez(
+                filename,
+                Rs_abs=Rs_abs,
+                ts_abs=ts_abs,
+                Rs_orb=Rs_orb,
+                ts_orb=ts_orb,
+                Rs_lp=Rs_lp,
+                ts_lp=ts_lp,
+                Rs_gt=Rs_gt,
+                ts_gt=ts_gt
+            )
+            print("Arrays saved!")
         else:
             print("Not enough keyframes for trajectory estimation.")
 
@@ -676,8 +645,8 @@ if __name__ == '__main__':
                   [ 0,  0,  1]])
     
     # Paths to groundtruth file and image folder.
-    groundtruth_file = "poses/00.txt"
-    image_folder = "KITTI_dataset/dataset/sequences/00/image_0"
+    groundtruth_file = "data_odometry_poses/dataset/poses/00.txt"
+    image_folder = "image_0"
     
     image_files = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder)
                           if f.endswith(('.png', '.jpg', '.jpeg'))])
@@ -689,4 +658,5 @@ if __name__ == '__main__':
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
                                focal_length=707, translation_thresh=0.01)
     n = len(image_files) # len(image_files)
+    n = 10
     vo_system.run(n)
