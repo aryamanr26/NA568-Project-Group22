@@ -273,9 +273,10 @@ class SuperVisualOdometry:
         ax.set_ylabel(ylabel)
         # ax.plot(x_est, y_est, linestyle='-', color='blue', label='Superglue + scale-correction')
         # ax.plot(x_est_ref, y_est_ref, linestyle='-', color='tab:brown', label='Orb + scale-correction')
-        ax.plot(x_lc, y_lc, linestyle='-', color='green', label='ORB')
-        ax.plot(x_odom, y_odom, linestyle='-', color='orange', label='Superglue')
-        ax.plot(x_gt, y_gt, marker='*', linestyle='-', color='black', label='Ground Truth')
+        ax.plot(x_lc, y_lc, marker='*', color = "tab:orange", linestyle='--', label='ORB')
+        ax.plot(x_odom, y_odom, marker='.', color = "tab:red", linestyle='-', label='Superglue Odometry')
+        ax.plot(x_gt, y_gt, marker='_', color = "tab:green", linestyle='-', label='Ground Truth')
+
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
         ax.axis('equal')
@@ -573,8 +574,8 @@ class SuperVisualOdometry:
             ts_orb = np.stack([t.flatten() for R,t in abs_poses_orb])
 
             # Do the same for abs_poses_orb, abs_poses_optimized, etc.
-            Rs_lp = np.stack([R for R,t in abs_poses_optimized])
-            ts_lp = np.stack([t.flatten() for R,t in abs_poses_optimized])
+            # Rs_lp = np.stack([R for R,t in abs_poses_optimized])
+            # ts_lp = np.stack([t.flatten() for R,t in abs_poses_optimized])
 
             Rs_gt = np.stack([R for R,t in self.keyframe_gt])
             ts_gt = np.stack([t.flatten() for R,t in self.keyframe_gt])
@@ -585,8 +586,6 @@ class SuperVisualOdometry:
                 ts_abs=ts_abs,
                 Rs_orb=Rs_orb,
                 ts_orb=ts_orb,
-                Rs_lp=Rs_lp,
-                ts_lp=ts_lp,
                 Rs_gt=Rs_gt,
                 ts_gt=ts_gt
             )
