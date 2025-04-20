@@ -235,7 +235,7 @@ class SuperVisualOdometry:
             last_R, last_t = R_abs, t_abs
         return abs_poses
     
-    def plot_pose_trajectory_single(self, optimized_poses, loopclosure_poses,odometry_poses, groundtruth_poses, plane="XZ"):
+    def plot_pose_trajectory_single(self, loopclosure_poses,odometry_poses, groundtruth_poses, plane="XZ"):
         """
         Plot estimated and groundtruth 2D trajectories on a single plot.
         
@@ -262,7 +262,6 @@ class SuperVisualOdometry:
                     raise ValueError("Invalid plane; choose 'XZ', 'XY', or 'YZ'.")
             return xs, ys
 
-        x_est, y_est = extract_coords(optimized_poses, plane)
         x_lc, y_lc = extract_coords(loopclosure_poses, plane)
         x_odom, y_odom = extract_coords(odometry_poses, plane)
         x_gt, y_gt = extract_coords(groundtruth_poses, plane)
@@ -272,10 +271,11 @@ class SuperVisualOdometry:
         xlabel, ylabel = axis_labels.get(plane.upper(), ("X", "Z"))
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        ax.plot(x_est, y_est, marker='o', linestyle='-', label='Estimated')
-        ax.plot(x_lc, y_lc, marker='d', linestyle='-', label='ORB')
-        ax.plot(x_odom, y_odom, marker='*', linestyle='-', label='Odometry')
-        ax.plot(x_gt, y_gt, marker='x', linestyle='--', label='Ground Truth')
+        # ax.plot(x_est, y_est, linestyle='-', color='blue', label='Superglue + scale-correction')
+        # ax.plot(x_est_ref, y_est_ref, linestyle='-', color='tab:brown', label='Orb + scale-correction')
+        ax.plot(x_lc, y_lc, linestyle='-', color='green', label='ORB')
+        ax.plot(x_odom, y_odom, linestyle='-', color='orange', label='Superglue')
+        ax.plot(x_gt, y_gt, marker='*', linestyle='-', color='black', label='Ground Truth')
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
         ax.axis('equal')
@@ -598,29 +598,38 @@ class SuperVisualOdometry:
             abs_poses_orb = self.accumulate_relative_poses(self.relative_poses_orb, R_org, t_org)
             
             print("Accumulated Poses:")
-            # for idx, pose in enumerate(abs_poses):
-            #     print(f"Pose {idx}:\nRotation:\n{pose[0]}\nTranslation: {pose[1]}\n")
             
             # LOOP CLOSURE: refine poses with GTSAM optimization
 
             abs_poses_optimized = self.perform_loop_closure(abs_poses)
-            # print("I'm here")
+            abs_poses_optimized_orb = self.perform_loop_closure(abs_poses_orb)
+            
           
-            est_xyz = np.array([pose[1].flatten() for pose in abs_poses_optimized])
-            gt_xyz = np.array([pose[1].flatten() for pose in self.keyframe_gt])
-            # Match lengths before alignment
-            min_len = min(len(est_xyz), len(gt_xyz))
-            est_xyz = est_xyz[:min_len]
-            gt_xyz = gt_xyz[:min_len]
-            aligned_xyz = align_trajectories_umeyama(est_xyz, gt_xyz)
+            # est_xyz = np.array([pose[1].flatten() for pose in abs_poses_optimized])
+            # gt_xyz = np.array([pose[1].flatten() for pose in self.keyframe_gt])
+            # # Match lengths before alignment
+            # min_len = min(len(est_xyz), len(gt_xyz))
+            # est_xyz = est_xyz[:min_len]
+            # gt_xyz = gt_xyz[:min_len]
+            # aligned_xyz = align_trajectories_umeyama(est_xyz, gt_xyz)
 
-            # Reconstruct aligned pose list (reuse original rotation)
-            aligned_poses = [(abs_poses_optimized[i][0], aligned_xyz[i]) for i in range(len(est_xyz))]
+            # # For ORB
+            # est_xyz_orb = np.array([pose[1].flatten() for pose in abs_poses_optimized_orb])
+            # gt_xyz_orb = np.array([pose[1].flatten() for pose in self.keyframe_gt])
+            # # Match lengths before alignment
+            # min_len_orb = min(len(est_xyz_orb), len(gt_xyz_orb))
+            # est_xyz_orb = est_xyz[:min_len_orb]
+            # gt_xyz_orb = gt_xyz[:min_len_orb]
+            # aligned_xyz_orb = align_trajectories_umeyama(est_xyz_orb, gt_xyz_orb)
+
+            # # Reconstruct aligned pose list (reuse original rotation)
+            # aligned_poses = [(abs_poses_optimized[i][0], aligned_xyz[i]) for i in range(len(est_xyz))]
+            # aligned_poses_orb = [(abs_poses_optimized_orb[i][0], aligned_xyz_orb[i]) for i in range(len(est_xyz_orb))]
 
 
             # Plot the optimized trajectory against the groundtruth.
-            self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XZ")
-            self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XY")
+            self.plot_pose_trajectory_single(abs_poses_orb, abs_poses, self.keyframe_gt, plane="XZ")
+            self.plot_pose_trajectory_single(abs_poses_orb, abs_poses, self.keyframe_gt, plane="XY")
         else:
             print("Not enough keyframes for trajectory estimation.")
 
@@ -680,5 +689,4 @@ if __name__ == '__main__':
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
                                focal_length=707, translation_thresh=0.01)
     n = len(image_files) # len(image_files)
-    n = 1000
     vo_system.run(n)
