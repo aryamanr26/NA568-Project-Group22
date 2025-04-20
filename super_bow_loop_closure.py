@@ -271,19 +271,11 @@ class SuperVisualOdometry:
         xlabel, ylabel = axis_labels.get(plane.upper(), ("X", "Z"))
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-<<<<<<< Updated upstream
         # ax.plot(x_est, y_est, linestyle='-', color='blue', label='Superglue + scale-correction')
         # ax.plot(x_est_ref, y_est_ref, linestyle='-', color='tab:brown', label='Orb + scale-correction')
         ax.plot(x_lc, y_lc, linestyle='-', color='green', label='ORB')
         ax.plot(x_odom, y_odom, linestyle='-', color='orange', label='Superglue')
         ax.plot(x_gt, y_gt, marker='*', linestyle='-', color='black', label='Ground Truth')
-=======
-        # ax.plot(x_est, y_est, marker='o', color = "tab:blue", linestyle='-', label='SuperVO (scale-correction)')
-        ax.plot(x_est, y_est, marker='o', color = "tab:blue", linestyle='-', label='Loop Closure')
-        ax.plot(x_lc, y_lc, marker='*', color = "tab:orange", linestyle='--', label='ORB')
-        ax.plot(x_odom, y_odom, marker='.', color = "tab:blue", linestyle='-', label='SuperVO Odometry')
-        ax.plot(x_gt, y_gt, marker='_', color = "tab:green", linestyle='-', label='Ground Truth')
->>>>>>> Stashed changes
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
         ax.axis('equal')
