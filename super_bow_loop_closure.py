@@ -34,6 +34,7 @@ class SuperVisualOdometry:
         self.K = K
         self.focal_length = focal_length
         self.translation_thresh = translation_thresh
+        self.estimated_pose_text = []
         
         # Device selection
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -273,10 +274,11 @@ class SuperVisualOdometry:
         ax.set_ylabel(ylabel)
         # ax.plot(x_est, y_est, linestyle='-', color='blue', label='Superglue + scale-correction')
         # ax.plot(x_est_ref, y_est_ref, linestyle='-', color='tab:brown', label='Orb + scale-correction')
-        ax.plot(x_lc, y_lc, marker='*', color = "tab:orange", linestyle='--', label='ORB')
-        ax.plot(x_odom, y_odom, marker='.', color = "tab:red", linestyle='-', label='Superglue Odometry')
-        ax.plot(x_gt, y_gt, marker='_', color = "tab:green", linestyle='-', label='Ground Truth')
 
+        ax.plot(x_lc, y_lc, marker='*', color = "tab:orange", linestyle='--', label='ORB')
+        ax.plot(x_odom, y_odom, marker='.', color = "tab:red", linestyle='-', label='SuperVO Odometry')
+        ax.plot(x_gt, y_gt, marker='_', color = "tab:green", linestyle='-', label='Ground Truth')
+        
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
         ax.axis('equal')
@@ -449,6 +451,13 @@ class SuperVisualOdometry:
 
         return matched_kpts0, matched_kpts1
 
+    def write_strings_to_file(self, lines, filename):
+        # Open the file in write mode. This will create the file if it doesn't exist.
+        with open(filename, 'w') as file:
+            for line in lines:
+                # Write each string followed by a newline character.
+                file.write(line + "\n")
+
     def run(self, length):
         """
         Execute the full pipeline:
@@ -468,6 +477,7 @@ class SuperVisualOdometry:
         
         # Set the first keyframe with an identity pose.
         init_pose = (np.eye(3), np.zeros((3, 1)))
+        self.estimated_pose_text = self.save_pose_kitti_format(np.eye(3), np.zeros((3,1)), self.estimated_pose_text)
         self.keyframes.append(init_pose)
         self.keyframe_gt.append(self.groundtruth_poses[0])
         last_keyframe_pose = init_pose
@@ -531,7 +541,6 @@ class SuperVisualOdometry:
 
             abs_poses_optimized = self.perform_loop_closure(abs_poses)
             abs_poses_optimized_orb = self.perform_loop_closure(abs_poses_orb)
-            
           
             # est_xyz = np.array([pose[1].flatten() for pose in abs_poses_optimized])
             # gt_xyz = np.array([pose[1].flatten() for pose in self.keyframe_gt])
@@ -562,7 +571,7 @@ class SuperVisualOdometry:
             # self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XY")
 
             ## SAVING THE DATA IN .npz FILE
-            version = 0
+            version = 8
             filename = "final_numpy/seq_{}_plot".format(version) + ".npz"
 
             # Suppose abs_poses is a list of (R, t) with R shape (3,3), t shape (3,) or (3,1)
@@ -592,6 +601,14 @@ class SuperVisualOdometry:
             print("Arrays saved!")
         else:
             print("Not enough keyframes for trajectory estimation.")
+        
+        # for i, pose in enumerate(abs_poses):
+        #     R, t = pose
+        #     self.estimated_pose_text = self.save_pose_kitti_format(R, t, self.estimated_pose_text)
+        # # Saving estimated trajectory
+        # output_path = "/home/vtiaero/files/output/orb.txt"
+        # self.write_strings_to_file(self.estimated_pose_text, output_path)
+        # print(len(self.estimated_pose_text))
 
 
 def align_trajectories_umeyama(estimated_xyz, gt_xyz):
@@ -636,8 +653,8 @@ if __name__ == '__main__':
                   [ 0,  0,  1]])
     
     # Paths to groundtruth file and image folder.
-    groundtruth_file = "data_odometry_poses/dataset/poses/00.txt"
-    image_folder = "image_0"
+    groundtruth_file = "data_odometry_poses/dataset/poses/08.txt"
+    image_folder = "image_08"
     
     image_files = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder)
                           if f.endswith(('.png', '.jpg', '.jpeg'))])
@@ -649,5 +666,4 @@ if __name__ == '__main__':
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
                                focal_length=707, translation_thresh=0.01)
     n = len(image_files) # len(image_files)
-    n = 10
     vo_system.run(n)
