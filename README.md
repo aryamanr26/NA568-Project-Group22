@@ -7,7 +7,7 @@
     <a href="https://www.linkedin.com/in/kushpatel19/"><strong>Kush Patel</strong></a> ·
     <a href="https://www.linkedin.com/in/kunalsiddhawar/"><strong>Kunal Siddhawar</strong></a>
   </p>
-
+  
   <h3 align="center">
     <a href="media/SuPerMVO.pdf">Paper</a> |
     <a href="https://www.youtube.com/watch?v=dF_nQ6IA1po">YouTube</a>
@@ -22,7 +22,7 @@
   </p>
 
   <p align="center">
-    <img src="/home/kushkp/rob530_project/NA568-Project-Group22/media/ROB530_Poster.jpg" alt="SuPerMVO Poster" width="700"/>
+    <img src="./media/ROB530_Poster.jpg" alt="SuPerMVO Poster" width="700"/>
   </p>
 </p>
 
@@ -37,26 +37,28 @@
 ## 🚀 Getting Started
 
 ### ⚙️ Create Conda Environment
-
-bash
+```bash
 conda create -n supermvo python=3.9
 conda activate supermvo
+```
 
 ### 🔍 Check CUDA version
-bash
+```bash
 nvcc --version
+```
 
 ### 🔧 Install PyTorch (match to your CUDA version)
-bash
+```bash
 # For CUDA 11.8
 conda install pytorch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 pytorch-cuda=11.8 -c pytorch -c nvidia
 # CUDA 12.1
 conda install pytorch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 pytorch-cuda=12.1 -c pytorch -c nvidia
 # CUDA 12.4
 conda install pytorch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 pytorch-cuda=12.4 -c pytorch -c nvidia
+```
 
 ### 🔧 Install Other Dependancy
-bash
+```bash
 # Install conda packages
 conda install pillow=11.0.0 pandas=2.2.3 opencv=4.11.0 scipy=1.13.1 numpy=1.26.4 -c conda-forge
 
@@ -65,6 +67,7 @@ conda install -c conda-forge gtsam=4.2.0
 
 # Install HuggingFace Transformers
 pip install transformers==4.50.3
+```
 
 ### 📚 KITTI Dataset
 We use the KITTI Odometry dataset for evaluation. You can download the ground truth and image sequences from the official site: [KITTI Odometry Benchmark](https://www.cvlibs.net/datasets/kitti/eval_odometry.php)
@@ -77,5 +80,6 @@ Inside main.py, add the path for ground truth poses and images in variable groun
 clone this repo in working directory: [SuperGluePretrainedNetwork](https://github.com/magicleap/SuperGluePretrainedNetwork) 
 
 ### How to Run
-bash
+```bash
 python main.py
+```
