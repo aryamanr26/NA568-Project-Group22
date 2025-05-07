@@ -1,4 +1,20 @@
-# SuPerMVO: SuperPoint-Glued Pose Estimation for Monocular Visual Odometry
+[comment]: <> (# SuPerMVO: SuperPoint-Glued Pose Estimation for Monocular Visual Odometry)
+
+<p align="center">
+  <h2 align="center">SuPerMVO: SuperPoint-Glued Pose Estimation for 
+    Monocular Visual Odometry</h2>
+  <p align="center">
+    <a href="https://www.linkedin.com/in/aaron-sequeira"><strong>Aaron Sequeria*</strong></a>
+    ·
+    <a href="https://www.linkedin.com/in/aryamanrao26"><strong>Aryaman Rao*</strong></a>
+    ·
+    <a href="https://www.linkedin.com/in/kunal-siddhawar-858839140"><strong>Kunal Siddhawar*</strong></a>
+    ·
+    <a href="https://www.linkedin.com/in/kush-patel-5397281b8"><strong>Kush Patel*</strong></a>
+  </p>
+  <p align="center">(* Equal Contribution)</p>
+
+ <!--## SuPerMVO: SuperPoint-Glued Pose Estimation for Monocular Visual Odometry -->
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.9+-blue)
