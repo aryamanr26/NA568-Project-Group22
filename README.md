@@ -94,3 +94,6 @@ git clone https://github.com/magicleap/SuperGluePretrainedNetwork.git
 ```bash
 python main.py
 ```
+### Licence
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for the full terms.  
