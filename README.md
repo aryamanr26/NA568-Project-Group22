@@ -2,10 +2,10 @@
   <h1 align="center">SuPerMVO: SuperPoint-Glued Pose Estimation for Monocular Visual Odometry</h1>
 
   <p align="center">
-    <a href="https://www.linkedin.com/in/aaronsequeira/"><strong>Aaron Sequeira</strong></a> ·
-    <a href="https://www.linkedin.com/in/aryaman-rao/"><strong>Aryaman Rao</strong></a> ·
-    <a href="https://www.linkedin.com/in/kushpatel19/"><strong>Kush Patel</strong></a> ·
-    <a href="https://www.linkedin.com/in/kunalsiddhawar/"><strong>Kunal Siddhawar</strong></a>
+    <a href="https://www.linkedin.com/in/aaron-sequeira/"><strong>Aaron Sequeira</strong></a> ·
+    <a href="https://www.linkedin.com/in/aryamanrao26/"><strong>Aryaman Rao</strong></a> ·
+    <a href="https://www.linkedin.com/in/kush-patel-5397281b8/"><strong>Kush Patel</strong></a> ·
+    <a href="https://www.linkedin.com/in/kunal-siddhawar-858839140/"><strong>Kunal Siddhawar</strong></a>
   </p>
   
   <h3 align="center">
@@ -17,7 +17,7 @@
   <p align="center">
     <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg" /></a>
     <img alt="Python" src="https://img.shields.io/badge/Python-3.9+-blue" />
-    <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.0-red" />
+    <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.6-red" />
     <img alt="KITTI" src="https://img.shields.io/badge/Dataset-KITTI-green" />
   </p>
 
@@ -70,14 +70,25 @@ pip install transformers==4.50.3
 ```
 
 ### 📚 KITTI Dataset
-We use the KITTI Odometry dataset for evaluation. You can download the ground truth and image sequences from the official site: [KITTI Odometry Benchmark](https://www.cvlibs.net/datasets/kitti/eval_odometry.php)
+We evaluate our pipeline on the KITTI Odometry Benchmark, leveraging both the raw image sequences and the official ground‑truth trajectories. To set up:
 
-Download the odometry dataset (grayscal, 22GB)
-Download odometry ground truth poses (4 MB)
-Inside main.py, add the path for ground truth poses and images in variable groundtruth_file and image_folder respectively.
+1. Download the **Grayscale Odometry Sequences** (≈22 GB) and the corresponding **ground‑truth poses** (≈4 MB) from the [KITTI Odometry Benchmark](https://www.cvlibs.net/datasets/kitti/eval_odometry.php).  
+2. In `main.py`, set:
+   ```python
+   groundtruth_file = "/path/to/poses.txt"
+   image_folder     = "/path/to/image/sequences/"
+3. Ensure that your folder structure matches KITTI’s format so that each frame aligns correctly with its ground‑truth pose.
 
 ### 📚 Pre-trained Model
-clone this repo in working directory: [SuperGluePretrainedNetwork](https://github.com/magicleap/SuperGluePretrainedNetwork) 
+We build on MagicLeap’s **SuperGluePretrainedNetwork** for feature matching:
+
+1. Clone the official repo into your working directory:
+```bash
+git clone https://github.com/magicleap/SuperGluePretrainedNetwork.git
+```
+2. Verify that the `SuperGluePretrainedNetwork` folder sits alongside `main.py` so imports resolve cleanly.
+3. The supplied weights (for both SuperPoint and SuperGlue) will be automatically downloaded on first run—no additional steps required.
+
 
 ### How to Run
 ```bash
