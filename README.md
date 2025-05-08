@@ -22,7 +22,7 @@
   </p>
 
   <p align="center">
-    <img src="./media/ROB530_Poster.jpg" alt="SuPerMVO Poster" width="700"/>
+    <img src="./media/ROB530_Poster.jpg" alt="SuPerMVO Poster" width="850"/>
   </p>
 </p>
 
@@ -30,7 +30,7 @@
 
 ### 📌 Project Summary
 
-**SuPerMVO** is a monocular visual odometry pipeline that integrates deep learning-based feature detection and matching using SuperPoint and SuperGlue, followed by SE(3)-based pose estimation and graph optimization via GTSAM. For scale correction and quantitative evaluation, we employ the evo toolkit in conjunction with the KITTI odometry benchmark. Our method performs robustly in low-texture and dynamic environments, significantly outperforming traditional ORB-SLAM pipelines in both translational and rotational accuracy.
+**SuPerMVO** is a monocular visual odometry pipeline that integrates deep learning-based feature detection and matching using [SuperPoint](https://github.com/rpautrat/SuperPoint) and [SuperGlue](https://github.com/magicleap/SuperGluePretrainedNetwork), followed by SE(3)-based pose estimation and graph optimization via GTSAM. For scale correction and quantitative evaluation, we employ the [evo](https://github.com/MichaelGrupp/evo) toolkit in conjunction with the KITTI odometry benchmark. Our method performs robustly in low-texture and dynamic environments, significantly outperforming traditional ORB-SLAM pipelines in both translational and rotational accuracy.
 
 ---
 
