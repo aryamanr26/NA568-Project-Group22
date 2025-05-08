@@ -3,6 +3,8 @@ import torch
 import cv2
 import numpy as np
 from PIL import Image
+import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import open3d as o3d
 import gtsam
@@ -32,6 +34,7 @@ class SuperVisualOdometry:
         self.K = K
         self.focal_length = focal_length
         self.translation_thresh = translation_thresh
+        self.estimated_pose_text = []
         
         # Device selection
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -69,6 +72,7 @@ class SuperVisualOdometry:
         self.keyframes = []       # Each keyframe is a tuple (R, t)
         self.relative_poses = []  # Relative pose estimates between keyframes
         self.keyframe_gt = []     # Groundtruth poses associated with keyframes
+        self.relative_poses_orb = []
 
         # ========== New: Initialize BoW vocabulary for loop closure ==========
         self.detector = cv2.SIFT_create()   # Keypoint detector
@@ -102,7 +106,11 @@ class SuperVisualOdometry:
     def load_image(self, path):
         """Load an image from file and convert it to RGB."""
         return Image.open(path).convert("RGB")
-    
+
+    def load_image_orb(self, path):
+        """Load an image from file and convert it to RGB."""
+        return cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+
     def detect_and_extract(self, image):
         """
         Use the SuperPoint model to detect keypoints and extract descriptors.
@@ -228,7 +236,7 @@ class SuperVisualOdometry:
             last_R, last_t = R_abs, t_abs
         return abs_poses
     
-    def plot_pose_trajectory_single(self, optimized_poses, loopclosure_poses,odometry_poses, groundtruth_poses, plane="XZ"):
+    def plot_pose_trajectory_single(self, loopclosure_poses,odometry_poses, groundtruth_poses, plane="XZ"):
         """
         Plot estimated and groundtruth 2D trajectories on a single plot.
         
@@ -255,7 +263,6 @@ class SuperVisualOdometry:
                     raise ValueError("Invalid plane; choose 'XZ', 'XY', or 'YZ'.")
             return xs, ys
 
-        x_est, y_est = extract_coords(optimized_poses, plane)
         x_lc, y_lc = extract_coords(loopclosure_poses, plane)
         x_odom, y_odom = extract_coords(odometry_poses, plane)
         x_gt, y_gt = extract_coords(groundtruth_poses, plane)
@@ -265,10 +272,13 @@ class SuperVisualOdometry:
         xlabel, ylabel = axis_labels.get(plane.upper(), ("X", "Z"))
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        ax.plot(x_est, y_est, marker='o', linestyle='-', label='Estimated')
-        ax.plot(x_lc, y_lc, marker='d', linestyle='-', label='Loop Closure')
-        ax.plot(x_odom, y_odom, marker='*', linestyle='-', label='Odometry')
-        ax.plot(x_gt, y_gt, marker='x', linestyle='--', label='Ground Truth')
+        # ax.plot(x_est, y_est, linestyle='-', color='blue', label='Superglue + scale-correction')
+        # ax.plot(x_est_ref, y_est_ref, linestyle='-', color='tab:brown', label='Orb + scale-correction')
+
+        ax.plot(x_lc, y_lc, marker='*', color = "tab:orange", linestyle='--', label='ORB')
+        ax.plot(x_odom, y_odom, marker='.', color = "tab:red", linestyle='-', label='SuperVO Odometry')
+        ax.plot(x_gt, y_gt, marker='_', color = "tab:green", linestyle='-', label='Ground Truth')
+        
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
         ax.axis('equal')
@@ -276,97 +286,6 @@ class SuperVisualOdometry:
         plt.tight_layout()
         plt.show()
     
-    # def perform_loop_closure(self, abs_poses):
-    #     """
-    #     Performs simple loop closure detection and graph optimization using GTSAM.
-        
-    #     Args:
-    #         abs_poses (list): List of absolute poses [(R, t), ...]
-        
-    #     Returns:
-    #         optimized_poses: List of optimized absolute poses after loop closure correction.
-    #     """
-    #     # print(1)
-    #     graph = gtsam.NonlinearFactorGraph()
-    #     # print(2)
-    #     initial_estimates = gtsam.Values()
-    #     # print(3)
-    #     noise_prior = gtsam.noiseModel.Diagonal.Variances(np.ones(6) * 1e-6)
-    #     noise_odometry = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.05]*6))
-    #     noise_loop = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.03]*6))
-    #     # print(4)
-
-    #     # Add prior on the first pose
-    #     # print(abs_poses[0])
-    #     R0, t0 = abs_poses[0]
-    #     # print(R0.shape)
-    #     # print(t0.shape)
-
-    #     # Sanity check on R0
-    #     should_be_identity = R0.T @ R0
-    #     det = np.linalg.det(R0)
-    #     # print("R0ᵀ * R0 =\n", should_be_identity)
-    #     # print("det(R0) =", det)
-
-    #     # if not np.allclose(should_be_identity, np.eye(3), atol=1e-3):
-    #     #     raise ValueError("❌ R0 is not orthogonal!")
-
-    #     # if not np.isclose(det, 1.0, atol=1e-3):
-    #     #     raise ValueError("❌ det(R0) ≠ 1. Invalid rotation matrix!")
-
-    #     if t0.shape == (3, 1): t0 = t0.flatten()
-    #     R0 = np.ascontiguousarray(R0, dtype=np.float64)
-    #     t0 = np.ascontiguousarray(t0, dtype=np.float64)
-    #     first_pose = gtsam.Pose3(gtsam.Rot3(R0), t0)
-    #     # print(5)
-    #     # print(first_pose)
-    #     graph.add(gtsam.PriorFactorPose3(0, first_pose, noise_prior))
-    #     # print(6)
-    #     initial_estimates.insert(0, first_pose)
-    #     # print(7)
-
-    #     # Add odometry constraints
-    #     for i in range(1, len(abs_poses)):
-    #         R, t = abs_poses[i]
-    #         if t.shape == (3, 1): t = t.flatten()
-    #         pose_i = gtsam.Pose3(gtsam.Rot3(R), t)
-    #         initial_estimates.insert(i, pose_i)
-
-    #         R_prev, t_prev = abs_poses[i-1]
-    #         R_curr, t_curr = abs_poses[i]
-    #         rel_R = R_prev.T @ R_curr
-    #         rel_t = R_prev.T @ (t_curr - t_prev)
-    #         rel_pose = gtsam.Pose3(gtsam.Rot3(rel_R), rel_t)
-    #         graph.add(gtsam.BetweenFactorPose3(i-1, i, rel_pose, noise_odometry))
-
-    #     # Hyper parameter for loop closure distance
-    #     length_parameter = 1000 
-        
-    #     # Naive loop closure: connect current frame to earlier if it's close in space
-    #     for i in range(len(abs_poses)):
-    #         for j in range(i+length_parameter, len(abs_poses), length_parameter):  # Skip nearby frames
-    #             t_i = abs_poses[i][1]
-    #             t_j = abs_poses[j][1]
-    #             dist = np.linalg.norm(t_i - t_j)
-    #             if dist < 5:  # Arbitrary threshold for loop detection
-    #                 R_rel = abs_poses[i][0].T @ abs_poses[j][0]
-    #                 t_rel = abs_poses[i][0].T @ (t_j - t_i)
-    #                 loop_pose = gtsam.Pose3(gtsam.Rot3(R_rel), t_rel)
-    #                 graph.add(gtsam.BetweenFactorPose3(i, j, loop_pose, noise_loop))
-
-    #     # Optimize
-    #     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimates)
-    #     result = optimizer.optimize()
-
-    #     # Extract optimized poses
-    #     optimized_poses = []
-    #     for i in range(len(abs_poses)):
-    #         pose_i = result.atPose3(i)
-    #         R_i = pose_i.rotation().matrix()
-    #         t_i = pose_i.translation()
-    #         optimized_poses.append((R_i, np.array([t_i[0], t_i[1], t_i[2]])))
-        
-    #     return optimized_poses
 
     def perform_loop_closure(self, abs_poses):
         """
@@ -438,9 +357,27 @@ class SuperVisualOdometry:
                 loop_pose = gtsam.Pose3(gtsam.Rot3(R_rel), t_rel)
                 graph.add(gtsam.BetweenFactorPose3(best_j, i, loop_pose, noise_loop))
 
-        # === Graph optimization ===
+        i_start = 0
+        i_end   = len(abs_poses) - 1
+        R_s, t_s = abs_poses[i_start]
+        R_e, t_e = abs_poses[i_end]
+        t_s = t_s.flatten() if t_s.shape == (3,1) else t_s
+        t_e = t_e.flatten() if t_e.shape == (3,1) else t_e
+
+        rel_R_end = R_s.T @ R_e
+        rel_t_end = R_s.T @ (t_e - t_s)
+        loop_pose_end = gtsam.Pose3(
+            gtsam.Rot3(rel_R_end),
+            np.ascontiguousarray(rel_t_end, dtype=np.float64)
+        )
+
+        noise_end = gtsam.noiseModel.Diagonal.Sigmas(np.ones(6) * 0.01)
+        graph.add(gtsam.BetweenFactorPose3(i_end, i_start, loop_pose_end, noise_end))
+        print(f"🔒 Forced loop closure: {i_end} → {i_start}")
+
+        # ——— Optimize the factor graph ———
         optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimates)
-        result = optimizer.optimize()
+        result    = optimizer.optimize()
 
         # === Extract optimized poses ===
         optimized_poses = []
@@ -488,6 +425,38 @@ class SuperVisualOdometry:
 
         # Vocabulary is ready — compute BoW descriptor
         return self.bow_extractor.compute(gray, keypoints)
+    
+    def detect_and_extract_orb(self, image):
+        orb = cv2.ORB_create(5000)  # You can adjust the number of features
+        keypoints, descriptors = orb.detectAndCompute(image, None)
+        return (keypoints, descriptors)
+
+    def match_features_orb(self, curr_feat, prev_feat, image_shape):
+        kp1, des1 = curr_feat
+        kp0, des0 = prev_feat
+
+        if des0 is None or des1 is None:
+            return [], []
+
+        # Brute-force matcher with Hamming distance
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(des0, des1)
+
+        # Sort by distance (optional)
+        matches = sorted(matches, key=lambda x: x.distance)
+
+        # Extract matched keypoints
+        matched_kpts0 = np.float32([kp0[m.queryIdx].pt for m in matches])
+        matched_kpts1 = np.float32([kp1[m.trainIdx].pt for m in matches])
+
+        return matched_kpts0, matched_kpts1
+
+    def write_strings_to_file(self, lines, filename):
+        # Open the file in write mode. This will create the file if it doesn't exist.
+        with open(filename, 'w') as file:
+            for line in lines:
+                # Write each string followed by a newline character.
+                file.write(line + "\n")
 
     def run(self, length):
         """
@@ -502,29 +471,38 @@ class SuperVisualOdometry:
         # Initialize with the first frame.
         first_image = self.load_image(self.image_files[0])
         first_feat = self.detect_and_extract(first_image)
+        first_image_orb = self.load_image_orb(self.image_files[0])
+        first_feat_orb  = self.detect_and_extract_orb(first_image_orb)
         image_shape = (first_image.height, first_image.width)
         
         # Set the first keyframe with an identity pose.
         init_pose = (np.eye(3), np.zeros((3, 1)))
+        self.estimated_pose_text = self.save_pose_kitti_format(np.eye(3), np.zeros((3,1)), self.estimated_pose_text)
         self.keyframes.append(init_pose)
         self.keyframe_gt.append(self.groundtruth_poses[0])
         last_keyframe_pose = init_pose
         prev_feat = first_feat
+        prev_feat_orb = first_feat_orb
         
         # Process subsequent images.
         for i, path in enumerate(self.image_files[1: length], start=1):
             curr_image = self.load_image(path)
             curr_feat = self.detect_and_extract(curr_image)
+            curr_image_orb = self.load_image_orb(path)
+            curr_feat_orb = self.detect_and_extract_orb(curr_image_orb)
             
             # Match features between the current frame and the last keyframe.
             matched_kpts0, matched_kpts1 = self.match_features(curr_feat, prev_feat, image_shape)
+            matched_kpts0_orb, matched_kpts1_orb = self.match_features_orb(prev_feat_orb, curr_feat_orb, image_shape)
             if len(matched_kpts0) < 8:
                 print(f"Not enough matches for image {path}, skipping.")
                 continue
             
             # Estimate the relative pose.
             R, t, _ = self.estimate_pose(matched_kpts0, matched_kpts1)
+            R_orb, t_orb, _orb = self.estimate_pose(matched_kpts0_orb, matched_kpts1_orb)
             current_pose = (R, t)
+            current_pose_orb = (R_orb, t_orb)
             # print(t)
             
             # Decide on keyframe selection based on the translation difference.
@@ -532,6 +510,7 @@ class SuperVisualOdometry:
                 self.keyframes.append(current_pose)
                 self.keyframe_gt.append(self.groundtruth_poses[i])
                 self.relative_poses.append(current_pose)
+                self.relative_poses_orb.append(current_pose_orb)
                 last_keyframe_pose = current_pose
                 print(f"Keyframe added: {path} (Total keyframes: {len(self.keyframes)})")
             
@@ -541,6 +520,7 @@ class SuperVisualOdometry:
             
             # Update the previous features (alternatively, you can always match to the last keyframe).
             prev_feat = curr_feat
+            prev_feat_orb = curr_feat_orb
         
         # === Step 3: Build Vocabulary (After all keyframes collected) ===
         print("Building BoW Vocabulary...")
@@ -553,33 +533,82 @@ class SuperVisualOdometry:
             R_org = self.keyframes[0][0]
             t_org = self.keyframes[0][1]
             abs_poses = self.accumulate_relative_poses(self.relative_poses, R_org, t_org)
+            abs_poses_orb = self.accumulate_relative_poses(self.relative_poses_orb, R_org, t_org)
             
             print("Accumulated Poses:")
-            # for idx, pose in enumerate(abs_poses):
-            #     print(f"Pose {idx}:\nRotation:\n{pose[0]}\nTranslation: {pose[1]}\n")
             
             # LOOP CLOSURE: refine poses with GTSAM optimization
 
             abs_poses_optimized = self.perform_loop_closure(abs_poses)
-            # print("I'm here")
+            abs_poses_optimized_orb = self.perform_loop_closure(abs_poses_orb)
           
-            est_xyz = np.array([pose[1].flatten() for pose in abs_poses_optimized])
-            gt_xyz = np.array([pose[1].flatten() for pose in self.keyframe_gt])
-            # Match lengths before alignment
-            min_len = min(len(est_xyz), len(gt_xyz))
-            est_xyz = est_xyz[:min_len]
-            gt_xyz = gt_xyz[:min_len]
-            aligned_xyz = align_trajectories_umeyama(est_xyz, gt_xyz)
+            # est_xyz = np.array([pose[1].flatten() for pose in abs_poses_optimized])
+            # gt_xyz = np.array([pose[1].flatten() for pose in self.keyframe_gt])
+            # # Match lengths before alignment
+            # min_len = min(len(est_xyz), len(gt_xyz))
+            # est_xyz = est_xyz[:min_len]
+            # gt_xyz = gt_xyz[:min_len]
+            # aligned_xyz = align_trajectories_umeyama(est_xyz, gt_xyz)
 
-            # Reconstruct aligned pose list (reuse original rotation)
-            aligned_poses = [(abs_poses_optimized[i][0], aligned_xyz[i]) for i in range(len(est_xyz))]
+            # # For ORB
+            # est_xyz_orb = np.array([pose[1].flatten() for pose in abs_poses_optimized_orb])
+            # gt_xyz_orb = np.array([pose[1].flatten() for pose in self.keyframe_gt])
+            # # Match lengths before alignment
+            # min_len_orb = min(len(est_xyz_orb), len(gt_xyz_orb))
+            # est_xyz_orb = est_xyz[:min_len_orb]
+            # gt_xyz_orb = gt_xyz[:min_len_orb]
+            # aligned_xyz_orb = align_trajectories_umeyama(est_xyz_orb, gt_xyz_orb)
+
+            # # Reconstruct aligned pose list (reuse original rotation)
+            # aligned_poses = [(abs_poses_optimized[i][0], aligned_xyz[i]) for i in range(len(est_xyz))]
+            # aligned_poses_orb = [(abs_poses_optimized_orb[i][0], aligned_xyz_orb[i]) for i in range(len(est_xyz_orb))]
 
 
             # Plot the optimized trajectory against the groundtruth.
-            self.plot_pose_trajectory_single(aligned_poses, abs_poses_optimized, abs_poses, self.keyframe_gt, plane="XZ")
-            self.plot_pose_trajectory_single(aligned_poses, abs_poses_optimized, abs_poses, self.keyframe_gt, plane="XY")
+            self.plot_pose_trajectory_single(abs_poses_orb, abs_poses, self.keyframe_gt, plane="XZ")
+            self.plot_pose_trajectory_single(abs_poses_orb, abs_poses, self.keyframe_gt, plane="XY")
+            # self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XZ")
+            # self.plot_pose_trajectory_single(aligned_poses, abs_poses_orb, abs_poses, self.keyframe_gt, plane="XY")
+
+            ## SAVING THE DATA IN .npz FILE
+            version = 8
+            filename = "final_numpy/seq_{}_plot".format(version) + ".npz"
+
+            # Suppose abs_poses is a list of (R, t) with R shape (3,3), t shape (3,) or (3,1)
+            Rs_abs  = np.stack([R for R,t in abs_poses])         # shape (N, 3, 3)
+            ts_abs  = np.stack([t.flatten() for R,t in abs_poses])  # shape (N, 3)
+
+            # Do the same for abs_poses_orb, abs_poses_optimized, etc.
+            Rs_orb = np.stack([R for R,t in abs_poses_orb])
+            ts_orb = np.stack([t.flatten() for R,t in abs_poses_orb])
+
+            # Do the same for abs_poses_orb, abs_poses_optimized, etc.
+            # Rs_lp = np.stack([R for R,t in abs_poses_optimized])
+            # ts_lp = np.stack([t.flatten() for R,t in abs_poses_optimized])
+
+            Rs_gt = np.stack([R for R,t in self.keyframe_gt])
+            ts_gt = np.stack([t.flatten() for R,t in self.keyframe_gt])
+
+            np.savez(
+                filename,
+                Rs_abs=Rs_abs,
+                ts_abs=ts_abs,
+                Rs_orb=Rs_orb,
+                ts_orb=ts_orb,
+                Rs_gt=Rs_gt,
+                ts_gt=ts_gt
+            )
+            print("Arrays saved!")
         else:
             print("Not enough keyframes for trajectory estimation.")
+        
+        # for i, pose in enumerate(abs_poses):
+        #     R, t = pose
+        #     self.estimated_pose_text = self.save_pose_kitti_format(R, t, self.estimated_pose_text)
+        # # Saving estimated trajectory
+        # output_path = "/home/vtiaero/files/output/orb.txt"
+        # self.write_strings_to_file(self.estimated_pose_text, output_path)
+        # print(len(self.estimated_pose_text))
 
 
 def align_trajectories_umeyama(estimated_xyz, gt_xyz):
@@ -624,8 +653,8 @@ if __name__ == '__main__':
                   [ 0,  0,  1]])
     
     # Paths to groundtruth file and image folder.
-    groundtruth_file = "data_odometry_poses/dataset/poses/00.txt"
-    image_folder = "image_0"
+    groundtruth_file = "data_odometry_poses/dataset/poses/08.txt"
+    image_folder = "image_08"
     
     image_files = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder)
                           if f.endswith(('.png', '.jpg', '.jpeg'))])
@@ -636,5 +665,5 @@ if __name__ == '__main__':
     # Initialize and run the visual odometry system.
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
                                focal_length=707, translation_thresh=0.01)
-    n = 1000 # len(image_files)
+    n = len(image_files) # len(image_files)
     vo_system.run(n)

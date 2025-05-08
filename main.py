@@ -283,9 +283,9 @@ class SuperVisualOdometry:
         xlabel, ylabel = axis_labels.get(plane.upper(), ("X", "Z"))
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        #ax.plot(x_est, y_est, marker='o', linestyle='-', label='Estimated')
+        ax.plot(x_est, y_est, marker='o', linestyle='-', label='Estimated')
         ax.plot(x_ot, y_ot, linestyle = '-', color = 'b', label = "Odometry")
-        ax.plot(x_gt, y_gt, linestyle='--', color = 'o', label='Ground Truth')
+        ax.plot(x_gt, y_gt, linestyle='--', color = 'tab:orange', label='Ground Truth')
         ax.set_title(f"2D Pose Trajectories ({plane.upper()} plane)")
         ax.grid(True)
         ax.axis('equal')
@@ -544,5 +544,5 @@ if __name__ == '__main__':
     # Initialize and run the visual odometry system.
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
                                focal_length=707, translation_thresh=0.01, window_size=20)
-    iterations =  1000 #len(image_files)
+    iterations =  100 #len(image_files)
     vo_system.run(iterations)

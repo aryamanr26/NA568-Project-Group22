@@ -378,7 +378,8 @@ class SuperVisualOdometry:
             # Plot the estimated trajectory against the groundtruth.
             self.plot_pose_trajectory_single(abs_poses, self.keyframe_gt, plane="XZ")
             self.plot_pose_trajectory_single(abs_poses, self.keyframe_gt, plane="XY")
-            self.plot_3d_trajectory(abs_poses, self.keyframe_gt, "trajectory.html")
+            # Uncomment the next line if you 
+            # self.plot_3d_trajectory(abs_poses, self.keyframe_gt, "trajectory.html")
         else:
             print("Not enough keyframes for trajectory estimation.")
 
@@ -395,7 +396,13 @@ if __name__ == '__main__':
     groundtruth_file = "data_odometry_poses/dataset/poses/00.txt"
     image_folder = "image_0"
     
+    image_files = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder)
+                          if f.endswith(('.png', '.jpg', '.jpeg'))])
+    if len(image_files) == 0:
+        print("No images found in the specified folder.")
+        exit()
+
     # Initialize and run the visual odometry system.
     vo_system = SuperVisualOdometry(image_folder, groundtruth_file, K,
                                focal_length=707, translation_thresh=0.01)
-    vo_system.run(1000)
+    vo_system.run(len(image_files))
